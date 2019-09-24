@@ -12,7 +12,7 @@ class ApplicationController < ActionController::API
       @current_user = User.find(user_id)
     else
       head :unauthorized
-      throw :halt
+      false
     end
   end
 end

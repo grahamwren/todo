@@ -2,34 +2,59 @@ require 'json'
 
 class TokenManager
   def self.generate_token(user_id)
-    create_time = Time.now
-    # Base64 encodes a token as [User's uuid, now in unix time, a signed token].join(':')
-    Base64.strict_encode64("#{user_id}:#{create_time.to_i}:#{gen_enc_token(user_id.to_s, create_time)}")
+    raise ArgumentError unless user_id
+
+    sign(build_token(user_id))
   end
 
-  def self.validate_token(token)
-    user_id, create_time_s, enc_token = Base64.decode64(token).split(':')
-    create_time = Time.at(create_time_s.to_i)
-    return false unless 1.day.ago < create_time
-    return false unless ActiveSupport::SecurityUtils.secure_compare(enc_token, gen_enc_token(user_id, create_time))
-    user_id
+  def self.validate_token(access_token)
+    # Validate this is the token I signed
+    return false unless validate_signature(access_token)
+
+    info = parse_token(access_token)
+
+    # Validate the token has not expired
+    return false unless 1.day.ago < info.created_at
+
+    info.user_id
   rescue
     raise ActionController::BadRequest
   end
 
   private
 
-  def self.gen_enc_token(user_id, create_time)
-    raise ArgumentError unless user_id
+  # Building
 
-    raw_token = JSON.dump({
+  def self.build_token(user_id)
+    Base64.strict_encode64("#{user_id}:#{Time.now.to_i}")
+  end
+
+  def self.parse_token(access_token)
+    token, _signature = access_token.split('.')
+    user_id, created_at = Base64.decode64(token).split(':')
+    OpenStruct.new(
       user_id: user_id,
-      time: create_time.iso8601
-    })
+      created_at: Time.at(created_at.to_i)
+    )
+  end
+
+  # Signing
+
+  def self.sign(token)
+    sig = compute_signature(token)
+    "#{token}.#{sig}"
+  end
+
+  def self.validate_signature(access_token)
+    token, signature = access_token.split('.')
+    ActiveSupport::SecurityUtils.secure_compare(signature, compute_signature(token))
+  end
+
+  def self.compute_signature(token)
     OpenSSL::HMAC.hexdigest(
-      'sha256',
+      'sha1',
       Todo::Application.credentials.secret_key_base,
-      raw_token
+      token
     )
   end
 end
