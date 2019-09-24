@@ -6,7 +6,7 @@ class UsersController < ApplicationController
     if (user = User.find_by_email(email)&.authenticate(password))
       render json: {
         user_id: user.id,
-        access_token: TokenManager.generate_token(user.id)
+        access_token: token_manager.build(user.id)
       }, status: 201
     else
       render status: :unauthorized
